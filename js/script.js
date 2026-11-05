@@ -88,15 +88,26 @@ function displayPhotos(photos) {
 
 	photos.forEach((photo) => {
 		if (photo.media_type === 'image') {
-			gallery.appendChild(createImageCard(photo));
+			if (!isPlaceholderImage(photo)) {
+				gallery.appendChild(createImageCard(photo));
+			}
 		} else if (photo.media_type === 'video') {
 			gallery.appendChild(createVideoCard(photo));
 		}
 	});
 
 	if (gallery.childElementCount === 0) {
-		showMessage('No displayable space media was found for that date range.');
+		if (photos.some((photo) => photo.media_type === 'image' && isPlaceholderImage(photo))) {
+			showApodPlaceholderMessage();
+		} else {
+			showMessage('No displayable space media was found for that date range.');
+		}
 	}
+}
+
+function isPlaceholderImage(photo) {
+	const imageUrls = [photo.url, photo.hdurl];
+	return photo.title === 'NASA Science' || imageUrls.some((url) => url && url.includes('nasa-logo@2x.png'));
 }
 
 function createImageCard(photo) {
@@ -177,5 +188,20 @@ function showMessage(message) {
 	placeholder.className = 'placeholder';
 	text.textContent = message;
 	placeholder.appendChild(text);
+	gallery.replaceChildren(placeholder);
+}
+
+function showApodPlaceholderMessage() {
+	const placeholder = document.createElement('div');
+	const message = document.createElement('p');
+	const archiveLink = document.createElement('a');
+
+	placeholder.className = 'placeholder';
+	message.textContent = 'NASA returned a placeholder logo instead of APOD photos. You can browse the APOD archive directly:';
+	archiveLink.href = 'https://apod.nasa.gov/apod/archivepix.html';
+	archiveLink.target = '_blank';
+	archiveLink.rel = 'noopener noreferrer';
+	archiveLink.textContent = 'NASA APOD archive';
+	placeholder.append(message, archiveLink);
 	gallery.replaceChildren(placeholder);
 }
