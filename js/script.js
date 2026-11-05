@@ -67,7 +67,12 @@ async function loadSpaceImages() {
 			throw new Error('NASA could not return photos for those dates. Please try again.');
 		}
 
-		const photos = await response.json();
+		let photos = await response.json();
+
+		if (Array.isArray(photos) && photos.some(isPlaceholderImage)) {
+			photos = await fetchApodArticles(startDate, endDate);
+		}
+
 		displayPhotos(photos);
 	} catch (error) {
 		showMessage(error.message || 'Unable to load space photos. Check your connection and try again.');
@@ -108,6 +113,55 @@ function displayPhotos(photos) {
 function isPlaceholderImage(photo) {
 	const imageUrls = [photo.url, photo.hdurl];
 	return photo.title === 'NASA Science' || imageUrls.some((url) => url && url.includes('nasa-logo@2x.png'));
+}
+
+async function fetchApodArticles(startDate, endDate) {
+	const articlesUrl = new URL('https://science.nasa.gov/wp-json/wp/v2/image-article');
+	articlesUrl.searchParams.set('after', `${offsetDate(startDate, -1)}T00:00:00`);
+	articlesUrl.searchParams.set('before', `${offsetDate(endDate, 1)}T00:00:00`);
+	articlesUrl.searchParams.set('per_page', '100');
+	articlesUrl.searchParams.set('orderby', 'date');
+	articlesUrl.searchParams.set('order', 'asc');
+	articlesUrl.searchParams.set('_embed', 'wp:featuredmedia');
+
+	const response = await fetch(articlesUrl);
+	if (!response.ok) {
+		throw new Error('NASA returned placeholder photos, and its APOD archive could not be loaded. Please try again later.');
+	}
+
+	const articles = await response.json();
+	return articles
+		.filter((article) => {
+			const articleDate = article.date.slice(0, 10);
+			return articleDate >= startDate && articleDate <= endDate;
+		})
+		.map((article) => {
+			const articleContent = new DOMParser().parseFromString(article.content.rendered, 'text/html');
+			const title = new DOMParser().parseFromString(article.title.rendered, 'text/html').body.textContent.trim();
+			const explanationParagraph = Array.from(articleContent.querySelectorAll('p'))
+				.find((paragraph) => paragraph.textContent.trim().startsWith('Explanation:'));
+			const explanation = explanationParagraph
+				? explanationParagraph.textContent.trim().replace(/^Explanation:\s*/, '')
+				: 'Read the full explanation on NASA\'s APOD page.';
+			const imageUrl = article._embedded?.['wp:featuredmedia']?.[0]?.source_url;
+			const video = articleContent.querySelector('iframe[src*="youtube"], iframe[src*="vimeo"], video');
+
+			return {
+				date: article.date.slice(0, 10),
+				title,
+				explanation,
+				media_type: video ? 'video' : 'image',
+				url: video ? article.link : imageUrl,
+				hdurl: imageUrl
+			};
+		})
+		.filter((photo) => photo.media_type === 'video' || photo.url);
+}
+
+function offsetDate(date, days) {
+	const dateValue = new Date(`${date}T00:00:00Z`);
+	dateValue.setUTCDate(dateValue.getUTCDate() + days);
+	return dateValue.toISOString().split('T')[0];
 }
 
 function createImageCard(photo) {
